@@ -110,7 +110,11 @@ __fastcall TGa1Agent::TGa1Agent(TComponent* Owner)
     // === Heartbeat 관련 초기화 추가 ===
     m_dwLastSendTick = 0;
     m_dwHeartbeatInterval = 5000;  // 5초 (필요시 조정)
- 
+
+    // === INI 설정 기본값 ===
+    m_nComPort = 3;
+    m_nBaudRate = 115200;
+    m_nTimeInterval = 5000;
 }
 
 //---------------------------------------------------------------------------
@@ -143,7 +147,7 @@ void __fastcall TGa1Agent::LogMessage(String msg)
     String logFileName;
     
     String exePath = ExtractFilePath(ParamStr(0));
-    String logBasePath = exePath + "Ga1_Log";
+    String logBasePath = exePath + "logsave";
 
     while (true)
     {
@@ -266,6 +270,35 @@ long __fastcall TGa1Agent::VariantToLong(const VARIANT &v)
         case VT_BOOL: return v.boolVal ? 1 : 0;
 		case VT_DATE: return (long)((v.date - 25569.0) * 86400.0); // OLE DATE (1899-12-30 기준) → Unix timestamp (1970-01-01 기준)
         default:      return 0;
+    }
+}
+
+//---------------------------------------------------------------------------
+// INI 설정 파일 로드
+//---------------------------------------------------------------------------
+void __fastcall TGa1Agent::LoadSettings()
+{
+    String IniPath = ExtractFilePath(ParamStr(0)) + "oem_setting.ini";
+    
+    TIniFile *ini = new TIniFile(IniPath);
+    try
+    {
+        // [Communication] 섹션
+        String comStr = ini->ReadString("Communication", "COM_Port", "COM3");
+
+        // "COM17" -> 17 추출
+        if (comStr.UpperCase().Pos("COM") == 1) m_nComPort = StrToIntDef(comStr.SubString(4, comStr.Length() - 3), 17);
+        else m_nComPort = StrToIntDef(comStr, 17);
+
+        m_nBaudRate = ini->ReadInteger("Communication", "BaudRate", 115200);
+        
+        // [Agent] 섹션
+        m_nTimeInterval = ini->ReadInteger("Agent", "TimeInterval", 5000);
+        LogMessage("CFG: COM" + IntToStr(m_nComPort) + " " + IntToStr(m_nBaudRate) + " T:" + IntToStr(m_nTimeInterval));
+    }
+    __finally
+    {
+        delete ini;
     }
 }
 
@@ -633,6 +666,9 @@ void __fastcall TGa1Agent::ServiceStart(TService *Sender, bool &Started)
 
     try
     {
+        // 0. INI 설정 로드 (최우선) ===
+        LoadSettings();
+
         // 1. CSV 설정 파일 로드
         String exePath = ExtractFilePath(ParamStr(0));
         String configFile = exePath + "oem_param.csv";
@@ -659,7 +695,7 @@ void __fastcall TGa1Agent::ServiceStart(TService *Sender, bool &Started)
         }
 
         // 2. 시리얼 포트 초기화
-        if (!InitSerialPort(17, 115200))
+        if (!InitSerialPort(m_nComPort, m_nBaudRate))
         {
             LogMessage("COM FAIL");
         }
@@ -667,6 +703,7 @@ void __fastcall TGa1Agent::ServiceStart(TService *Sender, bool &Started)
         // 3. OPC 서버 연결
         OPCServer = CoOPCServer::Create();
         OPCServer->Connect(WideString("Matrikon.OPC.Simulation.1"), TNoParam());
+//        OPCServer->Connect(WideString("Schneider-Aut.OFS.2"), TNoParam());
         LogMessage("OPC OK");
 
         // 4. 그룹 설정
@@ -710,7 +747,7 @@ void __fastcall TGa1Agent::ServiceStart(TService *Sender, bool &Started)
         // 6. 타이머 시작
         if (Timer1)
         {
-            Timer1->Interval = 5000;
+            Timer1->Interval = m_nTimeInterval;
             Timer1->Enabled = true;
         }
 
@@ -912,7 +949,7 @@ void __fastcall TGa1Agent::HandleSendFailure()
         CloseSerialPort();
         Sleep(1000);
         
-        if (InitSerialPort(17, 115200))
+        if (InitSerialPort(m_nComPort, m_nBaudRate))
         {
             LogMessage("COM OK");
             m_nRetryCount = 0;

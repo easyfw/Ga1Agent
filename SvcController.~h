@@ -70,6 +70,11 @@ private:        // User declarations
     _di_IOPCGroup      MyGroup;
     _di_IOPCItems      MyItems;
 
+     // === INI 설정 변수 ===
+    int m_nComPort;         // COM 포트 번호 (숫자만)
+    int m_nBaudRate;        // 통신 속도
+    int m_nTimeInterval;    // 타이머 간격 (ms)
+        
     // 아이템 배열
     TOPCItemInfo    m_Items[MAX_OPC_ITEMS];
     int             m_ItemCount;
@@ -93,7 +98,10 @@ private:        // User declarations
     void __fastcall LogMessage(String msg);
     String __fastcall VariantToString(const tagVARIANT &v);
     int __fastcall GetQualityCode(long quality);
-    
+
+        // === 설정 로드 함수 ===
+    void __fastcall LoadSettings();
+
     // 내부 함수 - CSV 로드
     bool __fastcall LoadItemConfig(String filename);
     
